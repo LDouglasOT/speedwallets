@@ -5,7 +5,7 @@ const OTP_EXPIRY_MINUTES = 5
 const MAX_ATTEMPTS = 3
 
 // Mock mode for development - logs OTP to console
-const MOCK_MODE = process.env.SMS_MOCK_MODE !== 'false'
+const MOCK_MODE = process.env.MOCK_MODE !== 'false'
 
 /**
  * Sends OTP via SMS (mock mode logs to console)
@@ -39,21 +39,39 @@ export async function sendOTP(
       expiresAt,
     },
   })
-  console.log(`[MOCK SMS] OTP for ${phone}: ${otp}`)
+  
   if (MOCK_MODE) {
     // In mock mode, log OTP to console for development
     console.log(`[MOCK SMS] OTP for ${phone}: ${otp}`)
-    return { success: true, message: `OTP sent (mock mode: ${otp})` }
+    return { success: true, message: 'OTP sent successfully' }
   }
   
-  // TODO: Implement real Smsnative API integration
-  // const response = await fetch('https://api.smsnative.com/send', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.SMSNATIVE_API_KEY}` },
-  //   body: JSON.stringify({ phone, message: `Your SpeedWallets verification code is: ${otp}` })
-  // })
-  
-  return { success: true, message: 'OTP sent successfully' }
+  // Real SMS sending via Smsnative API
+  try {
+    const message = `Your SpeedWallets verification code is: ${otp}`
+    const response = await fetch('https://api.smsnative.com/send', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.SMSNATIVE_API_KEY}` 
+      },
+      body: JSON.stringify({ 
+        phone, 
+        message,
+        senderid: process.env.SMSNATIVE_SENDERID || 'SPEEDWALLET'
+      })
+    })
+    
+    if (!response.ok) {
+      console.error('SMSNative API error:', response.status, await response.text())
+      return { success: false, message: 'Failed to send SMS' }
+    }
+    
+    return { success: true, message: 'OTP sent successfully' }
+  } catch (error) {
+    console.error('SMS sending error:', error)
+    return { success: false, message: 'Failed to send SMS' }
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-const MOCK_MODE = process.env.SMS_MOCK_MODE !== 'false'
+const MOCK_MODE = process.env.MOCK_MODE !== 'false'
 const SMSNATIVE_BASE_URL = 'http://www.smsnative.com/sendsms.php'
 
 /**

@@ -56,14 +56,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Extract mock OTP if present
-    const mockMatch = result.message.match(/mock mode: (\d{6})/)
-    const mockOtp = mockMatch ? mockMatch[1] : undefined
-
     return NextResponse.json({
       success: true,
       message: 'OTP sent successfully',
-      mockOtp, // Only present in mock mode
     })
   } catch (error) {
     console.error('Request OTP error:', error)

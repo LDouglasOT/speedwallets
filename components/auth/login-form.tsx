@@ -21,7 +21,6 @@ export function LoginForm() {
   const [step, setStep] = useState<'phone' | 'otp' | 'pin'>('phone')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [mockOtp, setMockOtp] = useState('')
 
   const handleRequestOTP = async () => {
     if (!phone || phone.length < 10) {
@@ -44,11 +43,6 @@ export function LoginForm() {
       if (!response.ok) {
         setError(data.error || 'Failed to send OTP')
         return
-      }
-
-      // In mock mode, show the OTP
-      if (data.mockOtp) {
-        setMockOtp(data.mockOtp)
       }
 
       setStep('otp')
@@ -152,7 +146,6 @@ export function LoginForm() {
     } else if (step === 'otp') {
       setStep('phone')
       setOtp('')
-      setMockOtp('')
     }
     setError('')
   }
@@ -203,21 +196,16 @@ export function LoginForm() {
           {step === 'otp' && (
             <Field>
               <FieldLabel>Verification Code</FieldLabel>
-              <Input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="000000"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                disabled={loading}
-                className="text-center text-2xl tracking-widest"
-              />
-              {mockOtp && (
-                <p className="text-sm text-muted-foreground mt-2 text-center">
-                  Mock OTP: <span className="font-mono font-bold text-primary">{mockOtp}</span>
-                </p>
-              )}
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  disabled={loading}
+                  className="text-center text-2xl tracking-widest"
+                />
             </Field>
           )}
 
