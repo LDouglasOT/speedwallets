@@ -5,32 +5,27 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Zap, Phone, Clock, CheckCircle, XCircle, Bookmark, X } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, Phone, Clock, Bookmark, X } from 'lucide-react'
 
-interface Student { id: number; fullName: string; balanceUgx: number; isFrozen: boolean }
 interface SavedPhone { id: number; phone: string; label: string | null }
 
-interface QuickTopUpProps { students: Student[] }
-
-const PRESETS = [5000, 10000, 20000, 50000]
+const PRESET_AMOUNTS = [5000, 10000, 20000, 50000]
 const POLL_INTERVAL_MS = 4000
 const POLL_TIMEOUT_MS = 3 * 60 * 1000
 
 type Step = 'form' | 'pending' | 'success' | 'failed'
 
-export function QuickTopUp({ students }: QuickTopUpProps) {
+export function TopupForm() {
   const router = useRouter()
-  const [selectedStudent, setSelectedStudent] = useState('')
   const [amount, setAmount] = useState('')
   const [phone, setPhone] = useState('')
   const [step, setStep] = useState<Step>('form')
   const [provider, setProvider] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const [savedPhones, setSavedPhones] = useState<SavedPhone[]>([])
   const [showSavePrompt, setShowSavePrompt] = useState(false)
   const [saveLabel, setSaveLabel] = useState('')
@@ -69,18 +64,17 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
           setStep('failed')
           setError(data.status === 'cancelled' ? 'Payment was cancelled.' : 'Payment failed. Please try again.')
         }
-      } catch { /* keep polling */ }
+      } catch { /* keep polling on network error */ }
     }, POLL_INTERVAL_MS)
 
     timeoutTimerRef.current = setTimeout(() => {
       stopPolling()
       setStep('failed')
-      setError('Payment timed out. If you approved the prompt, the balance will update shortly.')
+      setError('Payment timed out. If you approved the prompt, your balance will update shortly.')
     }, POLL_TIMEOUT_MS)
   }
 
-  const handleTopUp = async () => {
-    if (!selectedStudent) { setError('Select a student'); return }
+  const handleSubmit = async () => {
     const numAmount = Number(amount)
     if (!numAmount || numAmount < 500) { setError('Minimum top-up is UGX 500'); return }
     if (!phone || phone.length < 10) { setError('Enter a valid phone number'); return }
@@ -88,10 +82,10 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/parent/topup', {
+      const res = await fetch('/api/student/topup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: Number(selectedStudent), amount: numAmount, phone }),
+        body: JSON.stringify({ amount: numAmount, phone }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to initiate payment'); return }
@@ -138,11 +132,7 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
     referenceRef.current = null
   }
 
-  const activeStudents = students.filter((s) => !s.isFrozen)
-  if (activeStudents.length === 0) return null
-
   if (step === 'pending') {
-    const student = students.find((s) => s.id === Number(selectedStudent))
     return (
       <Card>
         <CardHeader>
@@ -150,16 +140,21 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
             <Clock className="w-5 h-5 animate-pulse text-primary" />
             Waiting for Payment
           </CardTitle>
-          <CardDescription>Approve the {provider ?? 'mobile money'} prompt on your phone</CardDescription>
+          <CardDescription>Approve the prompt on your phone</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-lg bg-primary/10 p-4 text-center space-y-1">
-            <p className="text-sm text-muted-foreground">Sending UGX {Number(amount).toLocaleString()} to</p>
-            <p className="font-semibold">{student?.fullName}</p>
-            <p className="text-sm text-muted-foreground">Charging <span className="font-mono">{phone}</span></p>
+            <p className="text-sm text-muted-foreground">
+              A {provider ?? 'mobile money'} USSD prompt has been sent to
+            </p>
+            <p className="font-mono font-semibold">{phone}</p>
+            <p className="text-sm text-muted-foreground">
+              for <span className="font-semibold text-foreground">UGX {Number(amount).toLocaleString()}</span>
+            </p>
           </div>
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Spinner /><span>Checking status…</span>
+            <Spinner />
+            <span>Checking status…</span>
           </div>
           <Button variant="outline" className="w-full" onClick={handleReset}>Cancel</Button>
         </CardContent>
@@ -168,7 +163,6 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
   }
 
   if (step === 'success') {
-    const student = students.find((s) => s.id === Number(selectedStudent))
     return (
       <Card>
         <CardContent className="pt-6 space-y-4">
@@ -176,7 +170,7 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
             <CheckCircle className="w-12 h-12 text-primary mx-auto" />
             <p className="font-semibold text-lg">Top-up Successful!</p>
             <p className="text-sm text-muted-foreground">
-              UGX {Number(amount).toLocaleString()} sent to {student?.fullName ?? 'student'}.
+              UGX {Number(amount).toLocaleString()} has been added to your wallet.
             </p>
           </div>
           {showSavePrompt && (
@@ -222,41 +216,25 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-accent" />
-          Quick Top-Up
+          <Plus className="w-5 h-5" />
+          Top Up Wallet
         </CardTitle>
-        <CardDescription>Add funds to a student wallet via Mobile Money</CardDescription>
+        <CardDescription>Add money via MTN or Airtel Mobile Money</CardDescription>
       </CardHeader>
       <CardContent>
         <FieldGroup>
           <Field>
-            <FieldLabel>Student</FieldLabel>
-            <Select value={selectedStudent} onValueChange={setSelectedStudent}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a student" />
-              </SelectTrigger>
-              <SelectContent>
-                {activeStudents.map((s) => (
-                  <SelectItem key={s.id} value={s.id.toString()}>
-                    {s.fullName} (UGX {s.balanceUgx.toLocaleString()})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field>
             <FieldLabel>Amount (UGX)</FieldLabel>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {PRESETS.map((p) => (
+            <div className="grid grid-cols-4 gap-2 mb-2">
+              {PRESET_AMOUNTS.map((preset) => (
                 <Button
-                  key={p}
-                  variant={Number(amount) === p ? 'default' : 'outline'}
+                  key={preset}
+                  variant={Number(amount) === preset ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setAmount(String(p))}
+                  onClick={() => setAmount(String(preset))}
                   disabled={loading}
                 >
-                  {p.toLocaleString()}
+                  {(preset / 1000).toFixed(0)}k
                 </Button>
               ))}
             </div>
@@ -278,7 +256,10 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {savedPhones.map((sp) => (
                   <div key={sp.id} className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-                    <button className="hover:text-primary" onClick={() => setPhone(sp.phone)}>
+                    <button
+                      className="hover:text-primary"
+                      onClick={() => setPhone(sp.phone)}
+                    >
                       {sp.label ?? sp.phone}
                     </button>
                     <button
@@ -298,7 +279,9 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
               onChange={(e) => setPhone(e.target.value)}
               disabled={loading}
             />
-            <p className="text-xs text-muted-foreground mt-1">MTN (077x, 078x) or Airtel (070x–075x)</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              MTN (077x, 078x) or Airtel (070x–075x)
+            </p>
           </Field>
 
           {error && (
@@ -308,13 +291,9 @@ export function QuickTopUp({ students }: QuickTopUpProps) {
             </Alert>
           )}
 
-          <Button
-            onClick={handleTopUp}
-            disabled={loading || !selectedStudent || !amount || !phone}
-            className="w-full"
-          >
-            {loading ? <Spinner className="mr-2" /> : <Zap className="mr-2 h-4 w-4" />}
-            Top Up via Mobile Money
+          <Button onClick={handleSubmit} disabled={loading || !amount || !phone} className="w-full">
+            {loading ? <Spinner className="mr-2" /> : <Plus className="mr-2 h-4 w-4" />}
+            Top Up
           </Button>
         </FieldGroup>
       </CardContent>

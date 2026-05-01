@@ -151,14 +151,6 @@ export function StudentCards({ students, parentId: _parentId }: StudentCardsProp
                 <span className="text-muted-foreground">Daily Limit</span>
                 <span>UGX {student.dailyLimitUgx.toLocaleString()}</span>
               </div>
-              <Button
-                onClick={() => setTopUpStudent(student)}
-                disabled={student.isFrozen}
-                className="w-full"
-              >
-                <CreditCard className="w-4 h-4 mr-2" />
-                Top Up
-              </Button>
             </CardContent>
           </Card>
         ))}

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Home, History } from 'lucide-react'
 
@@ -17,6 +18,15 @@ export default async function StudentLayout({
 
   if (!user || user.userType !== 'account' || user.role !== 'student') {
     redirect('/')
+  }
+
+  const account = await prisma.account.findUnique({
+    where: { id: user.userId },
+    select: { mustChangePin: true },
+  })
+
+  if (account?.mustChangePin) {
+    redirect('/change-pin')
   }
 
   return (

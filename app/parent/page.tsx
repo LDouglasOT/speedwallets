@@ -4,6 +4,7 @@ import { decrypt } from '@/lib/crypto'
 import { StudentCards } from '@/components/parent/student-cards'
 import { QuickTopUp } from '@/components/parent/quick-topup'
 import { RecentTransactions } from '@/components/parent/recent-transactions'
+import { PendingPayments } from '@/components/shared/pending-payments'
 
 async function getStudents(parentId: number) {
   const students = await prisma.account.findMany({
@@ -72,6 +73,8 @@ export default async function ParentDashboard() {
           <p className="text-3xl font-bold">UGX {todaySpending.toLocaleString()}</p>
         </div>
       </div>
+
+      <PendingPayments />
 
       <StudentCards students={students} parentId={user.userId} />
 

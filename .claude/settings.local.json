@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/user/Downloads/speedwallets/**)",
+      "WebSearch",
+      "WebFetch(domain:wallet.wearemarz.com)",
+      "Bash(npx prisma *)",
+      "Bash(npx tsc *)",
+      "Bash(npx next *)"
+    ]
+  }
+}

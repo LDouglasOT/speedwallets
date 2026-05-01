@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto'
+import { createCipheriv, createDecipheriv, randomBytes, createHash, randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || ''
@@ -105,4 +105,27 @@ export function generateOTP(): string {
  */
 export function hashOTP(otp: string): string {
   return createHash('sha256').update(otp).digest('hex')
+}
+
+/**
+ * Generates a random RFID code (16 uppercase hex chars)
+ */
+export function generateRfid(): string {
+  return randomBytes(8).toString('hex').toUpperCase()
+}
+
+/**
+ * Hashes an RFID code for indexed storage/lookup
+ */
+export function hashRfid(rfid: string): string {
+  return createHash('sha256').update(rfid.toUpperCase().trim()).digest('hex')
+}
+
+/**
+ * Generates a random numeric PIN of given length
+ */
+export function generatePin(length = 6): string {
+  const max = Math.pow(10, length)
+  const min = Math.pow(10, length - 1)
+  return (Math.floor(Math.random() * (max - min)) + min).toString()
 }
