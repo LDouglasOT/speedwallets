@@ -7,7 +7,7 @@ import { ArrowUpRight, ArrowDownRight, RotateCcw, Clock } from 'lucide-react'
 
 interface Transaction {
   id: number
-  type: 'topup' | 'purchase' | 'refund'
+  type: 'topup' | 'self_topup' | 'purchase' | 'refund'
   amountUgx: number
   createdAt: Date
   studentName?: string
@@ -21,19 +21,21 @@ interface RecentTransactionsProps {
 export function RecentTransactions({ transactions }: RecentTransactionsProps) {
   const getIcon = (type: string) => {
     switch (type) {
-      case 'topup':    return <ArrowDownRight className="w-4 h-4 text-primary" />
-      case 'purchase': return <ArrowUpRight className="w-4 h-4 text-destructive" />
-      case 'refund':   return <RotateCcw className="w-4 h-4 text-accent" />
-      default:         return null
+      case 'topup':
+      case 'self_topup': return <ArrowDownRight className="w-4 h-4 text-primary" />
+      case 'purchase':   return <ArrowUpRight className="w-4 h-4 text-destructive" />
+      case 'refund':     return <RotateCcw className="w-4 h-4 text-accent" />
+      default:           return null
     }
   }
 
   const getBadge = (type: string) => {
     switch (type) {
-      case 'topup':    return <Badge className="bg-primary/10 text-primary hover:bg-primary/20">Top Up</Badge>
-      case 'purchase': return <Badge variant="destructive">Purchase</Badge>
-      case 'refund':   return <Badge className="bg-accent/10 text-accent-foreground hover:bg-accent/20">Refund</Badge>
-      default:         return null
+      case 'topup':      return <Badge className="bg-primary/10 text-primary hover:bg-primary/20">Top Up</Badge>
+      case 'self_topup': return <Badge className="bg-primary/10 text-primary hover:bg-primary/20">Self Top Up</Badge>
+      case 'purchase':   return <Badge variant="destructive">Purchase</Badge>
+      case 'refund':     return <Badge className="bg-accent/10 text-accent-foreground hover:bg-accent/20">Refund</Badge>
+      default:           return null
     }
   }
 

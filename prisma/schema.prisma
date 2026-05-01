@@ -21,6 +21,10 @@ model Account {
   balanceUgx      Int            @default(0)
   dailyLimitUgx   Int            @default(50000)
   isFrozen        Boolean        @default(false)
+  alertThreshold  Int?
+  rfidHash        String?        @unique
+  mustChangePin   Boolean        @default(false)
+  photoUrl        String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -106,6 +110,7 @@ enum StaffRole {
 
 enum TransactionType {
   topup
+  self_topup
   purchase
   refund
 }
@@ -118,4 +123,43 @@ enum UserType {
 enum OTPPurpose {
   login
   reset_pin
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  reference     String        @unique
+  accountId     Int
+  beneficiaryId Int?
+  amountUgx     Int
+  phone         String
+  paymentType   PaymentType   @default(self_topup)
+  status        PaymentStatus @default(pending)
+  marzpayUuid   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+model SavedPhone {
+  id        Int      @id @default(autoincrement())
+  accountId Int
+  phone     String
+  label     String?
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, phone])
+  @@map("saved_phones")
+}
+
+enum PaymentType {
+  self_topup
+  parent_topup
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+  cancelled
 }

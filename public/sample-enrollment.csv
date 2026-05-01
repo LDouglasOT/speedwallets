@@ -1,4 +1,4 @@
-parent_name,parent_phone,parent_id_number,parent_pin,student_name,student_phone,student_pin,daily_limit
-John Doe,+256700000001,CM123456789,1234,Jane Doe,+256700000002,5678,50000
-John Doe,+256700000001,CM123456789,1234,Jack Doe,+256700000003,9012,30000
-Mary Smith,+256700000004,CM987654321,2345,Tom Smith,+256700000005,3456,40000
+parent_name,parent_phone,parent_id_number,parent_pin,student_name,student_phone,student_pin,daily_limit,rfid_code
+John Doe,+256700000001,CM123456789,1234,Jane Doe,+256700000002,5678,50000,
+John Doe,+256700000001,CM123456789,1234,Jack Doe,+256700000003,9012,30000,A1B2C3D4E5F60708
+Mary Smith,+256700000004,CM987654321,2345,Tom Smith,+256700000005,3456,40000,

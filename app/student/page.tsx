@@ -4,6 +4,8 @@ import { getDailySpending } from '@/lib/transactions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { TopupForm } from '@/components/student/topup-form'
+import { PendingPayments } from '@/components/shared/pending-payments'
 import { Wallet, TrendingUp, Clock, Snowflake } from 'lucide-react'
 
 export default async function StudentDashboard() {
@@ -26,7 +28,7 @@ export default async function StudentDashboard() {
   const dailyProgress = (dailySpent / account.dailyLimitUgx) * 100
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold">Hi, {user.fullName.split(' ')[0]}!</h1>
         <p className="text-muted-foreground">Here&apos;s your wallet overview</p>
@@ -93,6 +95,10 @@ export default async function StudentDashboard() {
           </CardHeader>
         </Card>
       </div>
+
+      <PendingPayments />
+
+      <TopupForm />
 
       <Card>
         <CardHeader>

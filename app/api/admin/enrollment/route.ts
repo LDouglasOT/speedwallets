@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { encrypt, hashForLookup, hashPin } from '@/lib/crypto'
+import { encrypt, hashForLookup, hashPin, generateRfid, hashRfid } from '@/lib/crypto'
+import { notifyStudentRegistration, notifyParentOfStudentRegistration } from '@/lib/notifications'
 import { parse } from 'csv-parse/sync'
 
 interface EnrollmentRow {
@@ -13,7 +14,10 @@ interface EnrollmentRow {
   student_phone: string
   student_pin: string
   daily_limit: string
+  rfid_code?: string
 }
+
+const APP_URL = process.env.APP_URL || 'http://localhost:3000'
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     const csvText = await file.text()
-    
+
     let records: EnrollmentRow[]
     try {
       records = parse(csvText, {
@@ -56,15 +60,14 @@ export async function POST(request: NextRequest) {
       errors: [] as string[],
     }
 
-    // Cache for parent IDs by phone hash (for sibling handling)
-    const parentCache: Record<string, number> = {}
+    const parentCache: Record<string, { id: number; isNew: boolean; pin: string }> = {}
+    const loginUrl = `${APP_URL}/login`
 
     for (let i = 0; i < records.length; i++) {
       const row = records[i]
-      const rowNum = i + 2 // Account for header row and 0-indexing
+      const rowNum = i + 2
 
       try {
-        // Validate required fields
         if (!row.parent_name || !row.parent_phone || !row.parent_pin) {
           result.errors.push(`Row ${rowNum}: Missing parent information`)
           continue
@@ -78,82 +81,97 @@ export async function POST(request: NextRequest) {
         const studentPhoneHash = hashForLookup(row.student_phone)
         const dailyLimit = parseInt(row.daily_limit, 10) || 50000
 
-        // Check/create parent
-        let parentId = parentCache[parentPhoneHash]
+        // Resolve parent
+        let cachedParent = parentCache[parentPhoneHash]
 
-        if (!parentId) {
-          // Check if parent exists in database
-          const existingParent = await prisma.account.findUnique({
-            where: {
-              phoneHash: parentPhoneHash,
-            },
-          })
+        if (!cachedParent) {
+          const existingParent = await prisma.account.findUnique({ where: { phoneHash: parentPhoneHash } })
 
           if (existingParent) {
-            parentId = existingParent.id
-            parentCache[parentPhoneHash] = parentId
+            cachedParent = { id: existingParent.id, isNew: false, pin: row.parent_pin }
             result.parentsUpdated++
           } else {
-            // Create new parent
-            const parentPhoneEncrypted = encrypt(row.parent_phone)
-            const parentPinHash = await hashPin(row.parent_pin)
             const parentIdEncrypted = row.parent_id_number ? encrypt(row.parent_id_number) : null
             const parentIdHash = row.parent_id_number ? hashForLookup(row.parent_id_number) : null
 
             const newParent = await prisma.account.create({
               data: {
-                phoneEncrypted: parentPhoneEncrypted,
+                phoneEncrypted: encrypt(row.parent_phone),
                 phoneHash: parentPhoneHash,
                 idNumberEncrypted: parentIdEncrypted,
                 idNumberHash: parentIdHash,
-                pinHash: parentPinHash,
+                pinHash: await hashPin(row.parent_pin),
                 fullName: row.parent_name,
                 role: 'parent',
+                mustChangePin: true,
               },
             })
 
-            parentId = newParent.id
-            parentCache[parentPhoneHash] = parentId
+            cachedParent = { id: newParent.id, isNew: true, pin: row.parent_pin }
             result.parentsCreated++
+
+            notifyParentOfStudentRegistration(
+              row.parent_phone,
+              row.parent_name,
+              row.student_name,
+              row.parent_pin,
+              row.student_pin,
+              loginUrl
+            ).catch(() => {})
           }
+
+          parentCache[parentPhoneHash] = cachedParent
         }
 
-        // Check/create student
+        // Resolve student
         const existingStudent = await prisma.account.findFirst({
-          where: {
-            phoneHash: studentPhoneHash,
-            role: 'student',
-          },
+          where: { phoneHash: studentPhoneHash, role: 'student' },
         })
 
         if (existingStudent) {
-          // Update existing student
           await prisma.account.update({
             where: { id: existingStudent.id },
-            data: {
-              parentId,
-              dailyLimitUgx: dailyLimit,
-              updatedAt: new Date(),
-            },
+            data: { parentId: cachedParent.id, dailyLimitUgx: dailyLimit, updatedAt: new Date() },
           })
           result.studentsUpdated++
         } else {
-          // Create new student
-          const studentPhoneEncrypted = encrypt(row.student_phone)
-          const studentPinHash = await hashPin(row.student_pin)
+          const rawRfid = row.rfid_code || generateRfid()
+          const rfidHashValue = hashRfid(rawRfid)
 
           await prisma.account.create({
             data: {
-              phoneEncrypted: studentPhoneEncrypted,
+              phoneEncrypted: encrypt(row.student_phone),
               phoneHash: studentPhoneHash,
-              pinHash: studentPinHash,
+              pinHash: await hashPin(row.student_pin),
               fullName: row.student_name,
               role: 'student',
-              parentId,
+              parentId: cachedParent.id,
               dailyLimitUgx: dailyLimit,
+              rfidHash: rfidHashValue,
+              mustChangePin: true,
             },
           })
           result.studentsCreated++
+
+          notifyStudentRegistration(
+            row.student_phone,
+            row.student_name,
+            row.student_pin,
+            rawRfid,
+            loginUrl
+          ).catch(() => {})
+
+          // Notify parent about this student (only if parent was already existing — new parents got notified above)
+          if (!cachedParent.isNew) {
+            notifyParentOfStudentRegistration(
+              row.parent_phone,
+              row.parent_name,
+              row.student_name,
+              null,
+              row.student_pin,
+              loginUrl
+            ).catch(() => {})
+          }
         }
       } catch (error) {
         result.errors.push(`Row ${rowNum}: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -163,9 +181,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result)
   } catch (error) {
     console.error('Enrollment error:', error)
-    return NextResponse.json(
-      { error: 'Enrollment failed' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Enrollment failed' }, { status: 500 })
   }
 }

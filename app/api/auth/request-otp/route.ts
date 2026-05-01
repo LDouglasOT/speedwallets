@@ -6,13 +6,16 @@ import { sendOTP } from '@/lib/otp'
 export async function POST(request: NextRequest) {
   try {
     const { phone, userType } = await request.json()
-
+    console.log(phone)
+    console.log(userType)
     if (!phone || !userType) {
       return NextResponse.json(
         { error: 'Phone and user type are required' },
         { status: 400 }
       )
     }
+        console.log(phone)
+    console.log(userType)
 
     const phoneHash = hashForLookup(phone)
 

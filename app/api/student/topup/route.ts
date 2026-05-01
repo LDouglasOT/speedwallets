@@ -7,17 +7,24 @@ import { collectMoney } from '@/lib/marzpay'
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
-    if (!user || user.userType !== 'account' || user.role !== 'parent') {
+    if (!user || user.userType !== 'account') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { studentId, amount, phone, savePhone, phoneLabel } = await request.json()
+    const account = await prisma.account.findFirst({
+      where: { id: user.userId, role: 'student' },
+    })
+    if (!account) {
+      return NextResponse.json({ error: 'Student account not found' }, { status: 403 })
+    }
+    if (account.isFrozen) {
+      return NextResponse.json({ error: 'Your account is frozen' }, { status: 403 })
+    }
 
-    if (!studentId || !amount || !phone) {
-      return NextResponse.json(
-        { error: 'Student, amount, and phone are required' },
-        { status: 400 }
-      )
+    const { amount, phone } = await request.json()
+
+    if (!amount || !phone) {
+      return NextResponse.json({ error: 'Amount and phone are required' }, { status: 400 })
     }
     if (typeof amount !== 'number' || amount < 500 || amount > 10_000_000) {
       return NextResponse.json(
@@ -26,29 +33,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify student belongs to this parent
-    const student = await prisma.account.findFirst({
-      where: { id: studentId, parentId: user.userId, role: 'student' },
-    })
-    if (!student) {
-      return NextResponse.json({ error: 'Student not found' }, { status: 404 })
-    }
-    if (student.isFrozen) {
-      return NextResponse.json({ error: 'Student account is frozen' }, { status: 403 })
-    }
-
     const reference = randomUUID()
     const callbackUrl = `${process.env.APP_URL}/api/webhooks/marzpay`
 
     await prisma.payment.create({
-      data: {
-        reference,
-        accountId: user.userId,
-        beneficiaryId: studentId,
-        amountUgx: amount,
-        phone,
-        paymentType: 'parent_topup',
-      },
+      data: { reference, accountId: user.userId, amountUgx: amount, phone },
     })
 
     const result = await collectMoney({ amount, phone_number: phone, reference, callback_url: callbackUrl })
@@ -60,15 +49,6 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Optionally save the phone number for future use
-    if (savePhone) {
-      await prisma.savedPhone.upsert({
-        where: { accountId_phone: { accountId: user.userId, phone } },
-        update: { label: phoneLabel ?? null },
-        create: { accountId: user.userId, phone, label: phoneLabel ?? null },
-      })
-    }
-
     return NextResponse.json({
       success: true,
       reference,
@@ -76,7 +56,7 @@ export async function POST(request: NextRequest) {
       message: result.message,
     })
   } catch (error) {
-    console.error('Parent topup error:', error)
+    console.error('Student topup error:', error)
     return NextResponse.json({ error: 'Failed to initiate payment' }, { status: 500 })
   }
 }

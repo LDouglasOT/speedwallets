@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { User, Phone, Snowflake } from 'lucide-react'
+import { AlertThresholdInput } from '@/components/parent/alert-threshold-input'
 
 async function getStudentsWithDetails(parentId: number) {
   const students = await prisma.account.findMany({
@@ -105,6 +106,12 @@ export default async function ParentStudentsPage() {
                       <p className="text-muted-foreground">Status</p>
                       <p className="font-semibold">{student.isFrozen ? 'Frozen' : 'Active'}</p>
                     </div>
+                  </div>
+                  <div className="border-t pt-4">
+                    <AlertThresholdInput
+                      studentId={student.id}
+                      initialThreshold={student.alertThreshold}
+                    />
                   </div>
                 </CardContent>
               </Card>

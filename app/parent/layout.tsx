@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
-import { Home, Users, History, Settings } from 'lucide-react'
+import { Home, Users, History } from 'lucide-react'
 
 const navItems = [
   { label: 'Dashboard', href: '/parent', icon: <Home className="h-4 w-4" /> },
@@ -18,6 +19,15 @@ export default async function ParentLayout({
 
   if (!user || user.userType !== 'account' || user.role !== 'parent') {
     redirect('/')
+  }
+
+  const account = await prisma.account.findUnique({
+    where: { id: user.userId },
+    select: { mustChangePin: true },
+  })
+
+  if (account?.mustChangePin) {
+    redirect('/change-pin')
   }
 
   return (

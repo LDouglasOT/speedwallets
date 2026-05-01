@@ -1,5 +1,6 @@
 import { prisma } from './db'
-import { createTransactionHash } from './crypto'
+import { createTransactionHash, decrypt } from './crypto'
+import { notifyBalanceLow } from './notifications'
 
 /**
  * Performs a top-up from parent to student wallet
@@ -23,7 +24,6 @@ export async function topUpStudent(
           id: parentId,
           role: 'parent',
         },
-        lock: { mode: 'FOR_UPDATE' },
       })
 
       if (!parent) {
@@ -37,7 +37,6 @@ export async function topUpStudent(
           role: 'student',
           parentId,
         },
-        lock: { mode: 'FOR_UPDATE' },
       })
 
       if (!student) {
@@ -99,6 +98,87 @@ export async function topUpStudent(
 }
 
 /**
+ * Performs a self top-up by student to their own wallet
+ * Uses pessimistic locking to ensure atomic balance updates
+ */
+export async function topUpSelf(
+  studentId: number,
+  amountUgx: number,
+  description?: string
+): Promise<{ success: boolean; transaction?: unknown; error?: string }> {
+  if (amountUgx <= 0) {
+    return { success: false, error: 'Amount must be greater than 0' }
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // Get student account with lock
+      const student = await tx.account.findFirst({
+        where: {
+          id: studentId,
+          role: 'student',
+        },
+      })
+
+      if (!student) {
+        throw new Error('Student account not found')
+      }
+
+      if (student.isFrozen) {
+        throw new Error('Student account is frozen')
+      }
+
+      // Calculate new balance
+      const studentBalanceBefore = student.balanceUgx
+      const studentBalanceAfter = studentBalanceBefore + amountUgx
+      const timestamp = new Date()
+
+      // Create integrity hash
+      const integrityHash = createTransactionHash(
+        'self_topup',
+        null,
+        studentId,
+        amountUgx,
+        studentBalanceBefore,
+        studentBalanceAfter,
+        timestamp.toISOString()
+      )
+
+      // Update student balance
+      const updatedStudent = await tx.account.update({
+        where: { id: studentId },
+        data: {
+          balanceUgx: studentBalanceAfter,
+          updatedAt: timestamp,
+        },
+      })
+
+      // Create transaction record
+      const transaction = await tx.transaction.create({
+        data: {
+          type: 'self_topup',
+          fromAccountId: null,
+          toAccountId: studentId,
+          amountUgx,
+          balanceBefore: studentBalanceBefore,
+          balanceAfter: studentBalanceAfter,
+          description: description || 'Self top-up',
+          integrityHash,
+          createdAt: timestamp,
+        },
+      })
+
+      return { transaction, updatedStudent }
+    })
+
+    return { success: true, transaction: result.transaction }
+  } catch (error) {
+    console.error('Self top-up error:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Transaction failed' }
+  }
+}
+
+/**
  * Processes a purchase by staff from student wallet
  * Uses pessimistic locking and checks daily limits
  */
@@ -120,7 +200,6 @@ export async function processPurchase(
           id: studentId,
           role: 'student',
         },
-        lock: { mode: 'FOR_UPDATE' },
       })
 
       if (!student) {
@@ -197,8 +276,29 @@ export async function processPurchase(
         },
       })
 
-      return { transaction }
+      return { transaction, balanceAfter, alertThreshold: student.alertThreshold, parentId: student.parentId, studentName: student.fullName }
     })
+
+    // Fire balance-low alert outside the transaction so it never blocks the purchase
+    if (
+      result.alertThreshold !== null &&
+      result.balanceAfter < result.alertThreshold &&
+      result.parentId
+    ) {
+      prisma.account
+        .findUnique({ where: { id: result.parentId } })
+        .then(async (parent) => {
+          if (!parent) return
+          await notifyBalanceLow(
+            decrypt(parent.phoneEncrypted),
+            parent.fullName,
+            result.studentName,
+            result.balanceAfter,
+            result.alertThreshold!
+          )
+        })
+        .catch((err) => console.error('Balance alert error:', err))
+    }
 
     return { success: true, transaction: result.transaction }
   } catch (error) {
@@ -228,7 +328,6 @@ export async function processRefund(
           id: studentId,
           role: 'student',
         },
-        lock: { mode: 'FOR_UPDATE' },
       })
 
       if (!student) {

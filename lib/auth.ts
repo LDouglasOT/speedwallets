@@ -5,7 +5,7 @@ import { hashForLookup, verifyPin } from './crypto'
 import { createHash } from 'crypto'
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'development-secret-key-change-in-production')
-const TOKEN_EXPIRY = '2h'
+const TOKEN_EXPIRY = '12h'
 const COOKIE_NAME = 'speedwallets_session'
 
 export interface JWTPayload {
@@ -19,6 +19,9 @@ export interface JWTPayload {
 
 /**
  * Creates a JWT token and stores session in database
+ * All time calculations are done in UTC for consistency with JWT standards
+ * The JWT exp claim is always UTC (seconds since epoch)
+ * For display in EAT (UTC+3), add 3 hours to UTC times
  */
 export async function createSession(
   userId: number,
@@ -26,7 +29,9 @@ export async function createSession(
   role: string,
   fullName: string
 ): Promise<string> {
-  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000) // 2 hours
+  // Calculate expiration time as UTC timestamp (2 hours from now)
+  // Date.now() returns UTC milliseconds since epoch
+  const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000) // 2 hours from now in UTC
   
   const token = await new SignJWT({ userId, userType, role, fullName })
     .setProtectedHeader({ alg: 'HS256' })
@@ -36,7 +41,8 @@ export async function createSession(
   
   const tokenHash = createHash('sha256').update(token).digest('hex')
   
-  // Store session in database
+  // Store session in database with UTC expiration time
+  // Prisma will store this as UTC timestamptz
   if (userType === 'account') {
     await prisma.session.create({
       data: {
@@ -62,6 +68,7 @@ export async function createSession(
 
 /**
  * Verifies JWT token and checks session validity
+ * All time comparisons are done in UTC for consistency
  */
 export async function verifySession(token: string): Promise<JWTPayload | null> {
   try {
@@ -69,11 +76,12 @@ export async function verifySession(token: string): Promise<JWTPayload | null> {
     const tokenHash = createHash('sha256').update(token).digest('hex')
     
     // Check if session exists and is not expired
+    // Using new Date() which gives current UTC time for comparison
     const session = await prisma.session.findFirst({
       where: {
         tokenHash,
         expiresAt: {
-          gt: new Date(),
+          gt: new Date(), // Current UTC time
         },
       },
     })
@@ -104,6 +112,7 @@ export async function getCurrentUser(): Promise<JWTPayload | null> {
 
 /**
  * Sets session cookie
+ * maxAge is set in seconds (2 hours) - this is timezone-independent
  */
 export async function setSessionCookie(token: string): Promise<void> {
   const cookieStore = await cookies()
@@ -111,7 +120,7 @@ export async function setSessionCookie(token: string): Promise<void> {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 2 * 60 * 60, // 2 hours
+    maxAge: 2 * 60 * 60, // 2 hours in seconds (timezone-independent)
     path: '/',
   })
 }

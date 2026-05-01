@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { encrypt, hashForLookup, hashPin } from '@/lib/crypto'
+import { notifyParentAccountCreated } from '@/lib/notifications'
+
+const APP_URL = process.env.APP_URL || 'http://localhost:3000'
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,9 +61,12 @@ export async function POST(request: NextRequest) {
         pinHash: await hashPin(pin),
         fullName,
         role: 'parent',
+        mustChangePin: true,
         ...(idNumberEncrypted && idNumberHash ? { idNumberEncrypted, idNumberHash } : {}),
       },
     })
+
+    notifyParentAccountCreated(phone, fullName, pin, `${APP_URL}/login`).catch(() => {})
 
     return NextResponse.json({ success: true, message: 'Parent added successfully' })
   } catch (error) {
