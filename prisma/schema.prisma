@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  id              Int            @id @default(autoincrement())
+  phoneEncrypted  String
+  phoneHash       String         @unique
+  idNumberEncrypted String?
+  idNumberHash    String?
+  pinHash         String
+  fullName        String
+  role            Role           @default(student)
+  parent          Account?       @relation("ParentChildren", fields: [parentId], references: [id])
+  parentId        Int?
+  children        Account[]      @relation("ParentChildren")
+  balanceUgx      Int            @default(0)
+  dailyLimitUgx   Int            @default(50000)
+  isFrozen        Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  sessions        Session[]
+  transactionsFrom Transaction[] @relation("TransactionFrom")
+  transactionsTo   Transaction[] @relation("TransactionTo")
+
+  @@map("accounts")
+}
+
+model Staff {
+  id             Int            @id @default(autoincrement())
+  phoneEncrypted String
+  phoneHash      String         @unique
+  pinHash        String
+  fullName       String
+  role           StaffRole      @default(staff)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  sessions       Session[]
+  transactions   Transaction[]
+
+  @@map("staff")
+}
+
+model Transaction {
+  id              Int            @id @default(autoincrement())
+  type            TransactionType
+  fromAccount     Account?       @relation("TransactionFrom", fields: [fromAccountId], references: [id])
+  fromAccountId   Int?
+  toAccount       Account?       @relation("TransactionTo", fields: [toAccountId], references: [id])
+  toAccountId     Int?
+  staff           Staff?         @relation(fields: [staffId], references: [id])
+  staffId         Int?
+  amountUgx       Int
+  balanceBefore   Int
+  balanceAfter    Int
+  description     String?
+  integrityHash   String         @unique
+  createdAt       DateTime       @default(now())
+
+  @@map("transactions")
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  account   Account? @relation(fields: [accountId], references: [id])
+  accountId Int?
+  staff     Staff?   @relation(fields: [staffId], references: [id])
+  staffId   Int?
+  userType  UserType
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("sessions")
+}
+
+model OTPCode {
+  id        Int      @id @default(autoincrement())
+  phoneHash String
+  codeHash  String
+  purpose   OTPPurpose
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@map("otp_codes")
+}
+
+enum Role {
+  parent
+  student
+}
+
+enum StaffRole {
+  staff
+  admin
+}
+
+enum TransactionType {
+  topup
+  purchase
+  refund
+}
+
+enum UserType {
+  account
+  staff
+}
+
+enum OTPPurpose {
+  login
+  reset_pin
+}
