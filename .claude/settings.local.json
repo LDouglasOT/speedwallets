@@ -7,6 +7,9 @@
       "Bash(npx prisma *)",
       "Bash(npx tsc *)",
       "Bash(npx next *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\user\\Downloads\\speedwallets\\app\\profile"
     ]
   }
 }

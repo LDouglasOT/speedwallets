@@ -12,6 +12,7 @@ model Account {
   phoneHash       String         @unique
   idNumberEncrypted String?
   idNumberHash    String?
+  studentNumber   String         @unique
   pinHash         String
   fullName        String
   role            Role           @default(student)
@@ -22,7 +23,7 @@ model Account {
   dailyLimitUgx   Int            @default(50000)
   isFrozen        Boolean        @default(false)
   alertThreshold  Int?
-  rfidHash        String?        @unique
+  rfidCode        String?        @unique
   mustChangePin   Boolean        @default(false)
   photoUrl        String?
   createdAt       DateTime       @default(now())

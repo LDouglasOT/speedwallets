@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { encrypt, hashForLookup, hashPin, generateRfid, hashRfid } from '@/lib/crypto'
+import { encrypt, hashForLookup, hashPin } from '@/lib/crypto'
 import { notifyStudentRegistration, notifyParentOfStudentRegistration } from '@/lib/notifications'
+import { generateStudentNumber } from '@/lib/utils'
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000'
 
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
       parentName,
       parentPhone,
       parentPin,
-      parentIdNumber,
+      parentIdNumber
     } = await request.json()
 
     if (!studentName || !studentPhone || !studentPin || !parentName || !parentPhone || !parentPin) {
@@ -37,13 +38,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Student phone already registered' }, { status: 400 })
     }
 
-    // Resolve RFID: use provided or auto-generate
-    const rawRfid = rfidCode || generateRfid()
-    const rfidHashValue = hashRfid(rawRfid)
-
-    const existingRfid = await prisma.account.findUnique({ where: { rfidHash: rfidHashValue } })
-    if (existingRfid) {
-      return NextResponse.json({ error: 'RFID tag already registered' }, { status: 400 })
+    // RFID is submitted externally from a hardware reader — optional
+    if (rfidCode) {
+      const existingRfid = await prisma.account.findUnique({ where: { rfidCode } })
+      if (existingRfid) {
+        return NextResponse.json({ error: 'RFID tag already registered' }, { status: 400 })
+      }
     }
 
     const parentPhoneHash = hashForLookup(parentPhone)
@@ -69,24 +69,43 @@ export async function POST(request: NextRequest) {
       isNewParent = true
     }
 
-    const student = await prisma.account.create({
-      data: {
-        phoneEncrypted: encrypt(studentPhone),
-        phoneHash: studentPhoneHash,
-        pinHash: await hashPin(studentPin),
-        fullName: studentName,
-        role: 'student',
-        parentId: parent.id,
-        dailyLimitUgx: dailyLimit,
-        rfidHash: rfidHashValue,
-        photoUrl,
-        mustChangePin: true,
-      },
-    })
+     // Generate a unique student number
+     let generatedStudentNumber;
+     let studentExists = true;
+     let attempts = 0;
+     const maxAttempts = 10;
+     
+     while (studentExists && attempts < maxAttempts) {
+       generatedStudentNumber = generateStudentNumber();
+       const existingStudent = await prisma.account.findFirst({
+         where: { studentNumber: generatedStudentNumber }
+       });
+       studentExists = !!existingStudent;
+       attempts++;
+     }
+     
+     if (studentExists) {
+       return NextResponse.json({ error: 'Failed to generate unique student number' }, { status: 500 });
+     }
+     
+     const student = await prisma.account.create({
+       data: {
+         phoneEncrypted: encrypt(studentPhone),
+         phoneHash: studentPhoneHash,
+         pinHash: await hashPin(studentPin),
+         fullName: studentName,
+         studentNumber: generatedStudentNumber,
+         role: 'student',
+         parentId: parent.id,
+         dailyLimitUgx: dailyLimit,
+         rfidCode: rfidCode || null,
+         photoUrl,
+         mustChangePin: true,
+       },
+     })
 
-    // Send SMS non-blocking
     const loginUrl = `${APP_URL}/login`
-    notifyStudentRegistration(studentPhone, studentName, studentPin, rawRfid, loginUrl).catch(() => {})
+    notifyStudentRegistration(studentPhone, studentName, studentPin, loginUrl).catch(() => {})
     notifyParentOfStudentRegistration(
       parentPhone,
       parentName,
@@ -103,7 +122,6 @@ export async function POST(request: NextRequest) {
         id: student.id,
         fullName: student.fullName,
         phone: studentPhone,
-        rfidCode: rawRfid,
         photoUrl: student.photoUrl,
         balanceUgx: student.balanceUgx,
         dailyLimitUgx: student.dailyLimitUgx,

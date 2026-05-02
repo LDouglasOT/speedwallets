@@ -1,5 +1,6 @@
 import { prisma } from './db'
 import { hashForLookup, generateOTP, hashOTP } from './crypto'
+import { normalizePhone } from './phone'
 
 const OTP_EXPIRY_MINUTES = 5
 const MAX_ATTEMPTS = 3
@@ -19,18 +20,11 @@ export async function sendOTP(
   const otpHash = hashOTP(otp)
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000)
   
-  // Invalidate any existing OTPs for this phone
   await prisma.oTPCode.updateMany({
-    where: {
-      phoneHash,
-      usedAt: null,
-    },
-    data: {
-      usedAt: new Date(),
-    },
+    where: { phoneHash, usedAt: null },
+    data: { usedAt: new Date() },
   })
   
-  // Create new OTP
   await prisma.oTPCode.create({
     data: {
       phoneHash,
@@ -41,29 +35,35 @@ export async function sendOTP(
   })
   
   if (MOCK_MODE) {
-    // In mock mode, log OTP to console for development
     console.log(`[MOCK SMS] OTP for ${phone}: ${otp}`)
     return { success: true, message: 'OTP sent successfully' }
   }
   
-  // Real SMS sending via Smsnative API
-  try {
-    const message = `Your SpeedWallets verification code is: ${otp}`
-    const response = await fetch('https://api.smsnative.com/send', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.SMSNATIVE_API_KEY}` 
-      },
-      body: JSON.stringify({ 
-        phone, 
-        message,
-        senderid: process.env.SMSNATIVE_SENDERID || 'SPEEDWALLET'
-      })
+   try {
+     // Keep message plain text (no special emojis or curly quotes)
+     const message = `Your SpeedWallets verification code is: ${otp}`
+     
+     // SMSNative expects format: 256740123456 (no + prefix)
+     const normalizedPhone = normalizePhone(phone).replace(/^\+/, '')
+     
+     const baseUrl = 'http://www.smsnative.com/sendsms.php'
+     const params = new URLSearchParams({
+       user: 'wazzination', 
+       password: 'jklasdzc.',
+       mobile: normalizedPhone,
+       senderid: process.env.SMSNATIVE_SENDERID || 'SPEEDWALLET',
+       message: message,
+     })
+
+    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+      method: 'GET'
     })
     
-    if (!response.ok) {
-      console.error('SMSNative API error:', response.status, await response.text())
+    const resultText = await response.text()
+    console.log('SMSNative API response:', response.status, resultText)
+
+    if (!response.ok || resultText.includes('ERROR')) {
+      console.error('SMSNative API error:', response.status, resultText)
       return { success: false, message: 'Failed to send SMS' }
     }
     

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { encrypt, hashForLookup, hashPin, generateRfid, hashRfid } from '@/lib/crypto'
+import { encrypt, hashForLookup, hashPin } from '@/lib/crypto'
 import { notifyStudentRegistration, notifyParentOfStudentRegistration } from '@/lib/notifications'
 import { parse } from 'csv-parse/sync'
+import { generateStudentNumber } from '@/lib/utils'
 
 interface EnrollmentRow {
   parent_name: string
@@ -15,6 +16,7 @@ interface EnrollmentRow {
   student_pin: string
   daily_limit: string
   rfid_code?: string
+  studentNumber?: string
 }
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3000'
@@ -23,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
 
-    if (!user || user.userType !== 'staff' || user.role !== 'admin') {
+    if (!user || user.userType !== 'staff') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -38,12 +40,9 @@ export async function POST(request: NextRequest) {
 
     let records: EnrollmentRow[]
     try {
-      records = parse(csvText, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-      })
-    } catch {
+      records = parse(csvText, { columns: true, skip_empty_lines: true, trim: true, relax_column_count: true })
+    } catch (e) {
+      console.log('CSV parsing error:', e)
       return NextResponse.json({ error: 'Invalid CSV format' }, { status: 400 })
     }
 
@@ -60,7 +59,7 @@ export async function POST(request: NextRequest) {
       errors: [] as string[],
     }
 
-    const parentCache: Record<string, { id: number; isNew: boolean; pin: string }> = {}
+    const parentCache: Record<string, { id: number; isNew: boolean }> = {}
     const loginUrl = `${APP_URL}/login`
 
     for (let i = 0; i < records.length; i++) {
@@ -88,7 +87,7 @@ export async function POST(request: NextRequest) {
           const existingParent = await prisma.account.findUnique({ where: { phoneHash: parentPhoneHash } })
 
           if (existingParent) {
-            cachedParent = { id: existingParent.id, isNew: false, pin: row.parent_pin }
+            cachedParent = { id: existingParent.id, isNew: false }
             result.parentsUpdated++
           } else {
             const parentIdEncrypted = row.parent_id_number ? encrypt(row.parent_id_number) : null
@@ -107,7 +106,7 @@ export async function POST(request: NextRequest) {
               },
             })
 
-            cachedParent = { id: newParent.id, isNew: true, pin: row.parent_pin }
+            cachedParent = { id: newParent.id, isNew: true }
             result.parentsCreated++
 
             notifyParentOfStudentRegistration(
@@ -135,33 +134,55 @@ export async function POST(request: NextRequest) {
           })
           result.studentsUpdated++
         } else {
-          const rawRfid = row.rfid_code || generateRfid()
-          const rfidHashValue = hashRfid(rawRfid)
-
-          await prisma.account.create({
-            data: {
-              phoneEncrypted: encrypt(row.student_phone),
-              phoneHash: studentPhoneHash,
-              pinHash: await hashPin(row.student_pin),
-              fullName: row.student_name,
-              role: 'student',
-              parentId: cachedParent.id,
-              dailyLimitUgx: dailyLimit,
-              rfidHash: rfidHashValue,
-              mustChangePin: true,
-            },
-          })
+           // Generate a unique student number if not provided
+           let finalStudentNumber = row.studentNumber;
+           if (!finalStudentNumber) {
+             let generatedStudentNumber;
+             let studentExists = true;
+             let attempts = 0;
+             const maxAttempts = 10;
+             
+             while (studentExists && attempts < maxAttempts) {
+               generatedStudentNumber = generateStudentNumber();
+               const existingStudent = await prisma.account.findFirst({
+                 where: { studentNumber: generatedStudentNumber }
+               });
+               studentExists = !!existingStudent;
+               attempts++;
+             }
+             
+             if (studentExists) {
+               result.errors.push(`Row ${rowNum}: Failed to generate unique student number`);
+               continue;
+             }
+             
+             finalStudentNumber = generatedStudentNumber;
+           }
+           
+           await prisma.account.create({
+             data: {
+               phoneEncrypted: encrypt(row.student_phone),
+               phoneHash: studentPhoneHash,
+               pinHash: await hashPin(row.student_pin),
+               fullName: row.student_name,
+               role: 'student',
+               studentNumber: finalStudentNumber,
+               parentId: cachedParent.id,
+               dailyLimitUgx: dailyLimit,
+               rfidCode: row.rfid_code || null,
+               mustChangePin: true,
+             },
+           })
           result.studentsCreated++
 
           notifyStudentRegistration(
             row.student_phone,
             row.student_name,
             row.student_pin,
-            rawRfid,
             loginUrl
           ).catch(() => {})
 
-          // Notify parent about this student (only if parent was already existing — new parents got notified above)
+          // Notify existing parent about the new student (new parents already notified above)
           if (!cachedParent.isNew) {
             notifyParentOfStudentRegistration(
               row.parent_phone,

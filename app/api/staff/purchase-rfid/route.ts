@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { processPurchase } from '@/lib/transactions'
 import { prisma } from '@/lib/db'
-import { hashRfid } from '@/lib/crypto'
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     const student = await prisma.account.findFirst({
-      where: { rfidHash: hashRfid(rfidCode), role: 'student' },
+      where: { studentNumber: rfidCode, role: 'student' },
     })
 
     if (!student) {
@@ -39,7 +38,11 @@ export async function POST(request: NextRequest) {
         fullName: student.fullName,
         photoUrl: student.photoUrl,
         balanceUgx: student.balanceUgx - amount,
-      },
+        dailyLimitUgx: student.dailyLimitUgx,
+        isFrozen: student.isFrozen,
+        studentNumber: student.studentNumber,
+        parentId: student.parentId,
+    },
     })
   } catch (error) {
     console.error('RFID purchase error:', error)

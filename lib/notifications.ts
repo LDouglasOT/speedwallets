@@ -1,16 +1,11 @@
+import { normalizePhone } from './phone'
+
 const MOCK_MODE = process.env.MOCK_MODE !== 'false'
 const SMSNATIVE_BASE_URL = 'http://www.smsnative.com/sendsms.php'
 
-/**
- * Normalizes a Ugandan phone number to the format expected by SmsNative (256XXXXXXXXX)
- * Accepts: 0712345678, 712345678, 256712345678, +256712345678
- */
-export function normalizeUgandaPhone(raw: string): string {
-  const digits = raw.replace(/[\s\-().+]/g, '')
-  if (digits.startsWith('256')) return digits
-  if (digits.startsWith('0')) return `256${digits.slice(1)}`
-  if (digits.length === 9) return `256${digits}`
-  return digits
+// SmsNative expects 256XXXXXXXXX (no leading +)
+function toSmsNativeFormat(phone: string): string {
+  return normalizePhone(phone).replace(/^\+/, '')
 }
 
 /**
@@ -46,46 +41,29 @@ async function sendSms(phone: string, message: string): Promise<void> {
     throw new Error('SMS service not configured')
   }
 
-  const normalizedPhone = normalizeUgandaPhone(phone)
+  const normalizedPhone = toSmsNativeFormat(phone)
 
-  // Build the SmsNative API URL
   const params = new URLSearchParams({
-    user: username,
-    password: password,
+    user: "wazzination",
+    password:"jklasdzc.",
     mobile: normalizedPhone,
     senderid: senderId,
-    message: message,
+    message,
   })
 
-  const url = `${SMSNATIVE_BASE_URL}?${params.toString()}`
+  const response = await fetch(`${SMSNATIVE_BASE_URL}?${params.toString()}`, { method: 'GET' })
 
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'text/plain',
-      },
-    })
+  if (!response.ok) {
+    throw new Error(`SMS send failed: HTTP ${response.status}`)
+  }
 
-    if (!response.ok) {
-      console.error(`SmsNative HTTP error: ${response.status} ${response.statusText}`)
-      throw new Error(`SMS send failed: HTTP ${response.status}`)
-    }
+  const responseText = await response.text()
+  const responseCode = responseText.trim().split(':')[0]
 
-    const responseText = await response.text()
-    const responseCode = responseText.trim().split(':')[0]
-
-    // Check if the response code indicates success
-    if (responseCode === '1111') {
-      console.log(`[SMSNATIVE] SMS sent successfully to ${normalizedPhone}: ${responseText}`)
-    } else {
-      const errorMessage = SMSNATIVE_RESPONSE_CODES[responseCode] || `Unknown error: ${responseText}`
-      console.error(`[SMSNATIVE] SMS failed to ${normalizedPhone}: ${errorMessage} (raw: ${responseText})`)
-      throw new Error(`SMS send failed: ${errorMessage}`)
-    }
-  } catch (error) {
-    console.error(`[SMSNATIVE] Error sending SMS to ${normalizedPhone}:`, error)
-    throw error
+  if (responseCode !== '1111') {
+    const errorMessage = SMSNATIVE_RESPONSE_CODES[responseCode] || `Unknown error: ${responseText}`
+    console.error(`[SMSNATIVE] SMS failed to ${normalizedPhone}: ${errorMessage}`)
+    throw new Error(`SMS send failed: ${errorMessage}`)
   }
 }
 
@@ -148,7 +126,6 @@ export async function notifyStudentRegistration(
   studentPhone: string,
   studentName: string,
   pin: string,
-  rfidCode: string,
   loginUrl: string
 ): Promise<void> {
   const message =
@@ -157,7 +134,6 @@ export async function notifyStudentRegistration(
     `Login: ${loginUrl}\n` +
     `Phone: ${studentPhone}\n` +
     `PIN: ${pin}\n` +
-    `RFID: ${rfidCode}\n` +
     `Please change your PIN after your first login.`
   await sendSms(studentPhone, message)
 }
@@ -168,7 +144,8 @@ export async function notifyParentOfStudentRegistration(
   studentName: string,
   parentPin: string | null,
   studentPin: string,
-  loginUrl: string
+  loginUrl: string,
+  studentNumber?: string
 ): Promise<void> {
   const pinLine = parentPin ? `Your PIN: ${parentPin}\n` : ''
   const message =

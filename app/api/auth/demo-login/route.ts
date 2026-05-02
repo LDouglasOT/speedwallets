@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
             pinHash: await hashPin(config.pin),
             fullName: config.name,
             role: config.role,
+            
             isActive: true,
           },
         })
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
           data: {
             phoneEncrypted: encrypt(config.phone),
             phoneHash,
+            studentNumber: config.role === 'student' ? 'S123456' : undefined,
             pinHash: await hashPin(config.pin),
             fullName: config.name,
             role: config.role,

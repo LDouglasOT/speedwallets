@@ -1,16 +1,6 @@
-const MARZPAY_BASE_URL = 'https://wallet.wearemarz.com/api/v1'
+import { normalizePhone } from './phone'
 
-/**
- * Normalizes a Ugandan phone number to E.164 format (+256XXXXXXXXX).
- * Accepts: 0712345678, 712345678, 256712345678, +256712345678
- */
-export function normalizeUgandaPhone(raw: string): string {
-  const digits = raw.replace(/[\s\-().+]/g, '')
-  if (digits.startsWith('256')) return `+${digits}`
-  if (digits.startsWith('0')) return `+256${digits.slice(1)}`
-  if (digits.length === 9) return `+256${digits}`
-  return `+${digits}`
-}
+const MARZPAY_BASE_URL = 'https://wallet.wearemarz.com/api/v1'
 
 export interface MarzPayTransactionStatus {
   status: 'pending' | 'completed' | 'failed' | 'cancelled'
@@ -67,7 +57,7 @@ export async function collectMoney(params: {
       'Content-Type': 'application/json',
       'Authorization': `Basic ${process.env.MARZPAY_BASE64}`,
     },
-    body: JSON.stringify({ ...params, phone_number: normalizeUgandaPhone(params.phone_number), country: 'UG' }),
+    body: JSON.stringify({ ...params, phone_number: normalizePhone(params.phone_number), country: 'UG' }),
   })
 
   if (!response.ok) {

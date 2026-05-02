@@ -5,7 +5,7 @@ import { hashForLookup, verifyPin } from './crypto'
 import { createHash } from 'crypto'
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'development-secret-key-change-in-production')
-const TOKEN_EXPIRY = '12h'
+const TOKEN_EXPIRY_SECONDS = 24 * 60 * 60 // 24 hours in seconds
 const COOKIE_NAME = 'speedwallets_session'
 
 export interface JWTPayload {
@@ -29,15 +29,15 @@ export async function createSession(
   role: string,
   fullName: string
 ): Promise<string> {
-  // Calculate expiration time as UTC timestamp (2 hours from now)
+  // Calculate expiration time as UTC timestamp (24 hours from now)
   // Date.now() returns UTC milliseconds since epoch
-  const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000) // 2 hours from now in UTC
+  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_SECONDS * 1000)
   
-  const token = await new SignJWT({ userId, userType, role, fullName })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime(TOKEN_EXPIRY)
-    .sign(JWT_SECRET)
+const token = await new SignJWT({ userId, userType, role, fullName })
+  .setProtectedHeader({ alg: 'HS256' })
+  .setIssuedAt()
+  .setExpirationTime(`${TOKEN_EXPIRY_SECONDS}s`) // ✅
+  .sign(JWT_SECRET)
   
   const tokenHash = createHash('sha256').update(token).digest('hex')
   
@@ -73,10 +73,9 @@ export async function createSession(
 export async function verifySession(token: string): Promise<JWTPayload | null> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET)
+    console.log('JWT payload:', payload)
     const tokenHash = createHash('sha256').update(token).digest('hex')
-    
-    // Check if session exists and is not expired
-    // Using new Date() which gives current UTC time for comparison
+
     const session = await prisma.session.findFirst({
       where: {
         tokenHash,
@@ -85,13 +84,14 @@ export async function verifySession(token: string): Promise<JWTPayload | null> {
         },
       },
     })
-    
+    console.log('session token from db:',session)
     if (!session) {
       return null
     }
     
     return payload as unknown as JWTPayload
-  } catch {
+  } catch(e) {
+    console.log('JWT verification error:', e)
     return null
   }
 }
@@ -102,25 +102,28 @@ export async function verifySession(token: string): Promise<JWTPayload | null> {
 export async function getCurrentUser(): Promise<JWTPayload | null> {
   const cookieStore = await cookies()
   const token = cookieStore.get(COOKIE_NAME)?.value
-  
+  console.log('Session token from cookie:', token)
+
   if (!token) {
     return null
   }
-  
-  return verifySession(token)
+  const verified = await verifySession(token)
+  console.log('verified token is',verified)
+
+  return verified
 }
 
-/**
- * Sets session cookie
- * maxAge is set in seconds (2 hours) - this is timezone-independent
- */
+  /**
+   * Sets session cookie
+   * maxAge is set in seconds (24 hours) - this is timezone-independent
+   */
 export async function setSessionCookie(token: string): Promise<void> {
   const cookieStore = await cookies()
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 2 * 60 * 60, // 2 hours in seconds (timezone-independent)
+    maxAge: TOKEN_EXPIRY_SECONDS, // matches JWT expiration
     path: '/',
   })
 }

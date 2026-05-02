@@ -8,10 +8,14 @@ export async function GET(request: NextRequest) {
     console.log(
       "/////////////////////////////////////////////////////"
     )
-    // Verify admin access
-    if (!user || user.userType !== 'staff' || user.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Verify admin access\
+    console.log(user)
+    
+   if (!user || user.userType !== 'staff') {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+}
+
+    console.log("/////////////////////////////////////////////////////")
 
     const students = await prisma.account.findMany({
       where: { role: 'student' },
@@ -21,8 +25,10 @@ export async function GET(request: NextRequest) {
         balanceUgx: true,
         dailyLimitUgx: true,
         isFrozen: true,
+        studentNumber: true,
         photoUrl: true,
         createdAt: true,
+        
         parent: {
           select: {
             id: true,

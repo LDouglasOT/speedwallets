@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { hashRfid } from '@/lib/crypto'
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,9 +15,10 @@ export async function GET(request: NextRequest) {
     if (!rfidCode) {
       return NextResponse.json({ error: 'RFID code is required' }, { status: 400 })
     }
+    
 
     const account = await prisma.account.findFirst({
-      where: { rfidHash: hashRfid(rfidCode), role: 'student' },
+      where: { studentNumber:rfidCode, role: 'student' },
       select: {
         id: true,
         fullName: true,
